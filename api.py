@@ -12,10 +12,7 @@ import os
 
 from datetime import datetime
 import time
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from loguru import logger  # Changed import
 
 app = FastAPI()
 
@@ -35,7 +32,7 @@ async def query(request: Request):
     query_data = await request.json()
 
     if not query_data or "question" not in query_data:
-        logger.error("Invalid input: %s", query_data)
+        logger.error("Invalid input: %s", query_data)  # Using loguru logger
         return Response(
             status_code=400,
             content='{"error": "Invalid input, \'question\' field is required."}',
@@ -44,8 +41,8 @@ async def query(request: Request):
     query = query_data["question"]
 
     prompt_template = f"""
-    Humano: Usa las siguientes piezas de contexto para proporcionar una respuesta concisa a la 
-    pregunta al final. Por favor, resume con menos de 250 palabras y explicaciones detalladas. 
+    Humano: Usa las siguientes piezas de contexto para proporcionar una respuesta concisa a la
+    pregunta al final. Por favor, resume con menos de 250 palabras y explicaciones detalladas.
     Si no sabes la respuesta, solo di que no la sabes; no intentes inventarla. Solo contesta de acuerdo al siguiente fragmento de texto,
     sin agregar información adicional. Porfavor siempre contesta en español.
     Si la pregunta no está relacionada con el contexto, responde "Por favor, haga una pregunta relacionada con el contexto".
@@ -64,7 +61,9 @@ async def query(request: Request):
     date_field = current_datetime.strftime("%Y-%m-%d")  # Format YYYY-MM-DD
     time_field = current_datetime.strftime("%H:%M:%S")  # Format HH:MM:SS
 
-    logger.info("Time to query: %s seconds", end_time_query - start_time_query)
+    logger.info(
+        "Time to query: %s seconds", end_time_query - start_time_query
+    )  # Using loguru logger
 
     return {
         "response": response_data["result"],
