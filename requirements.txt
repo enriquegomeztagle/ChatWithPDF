@@ -1,11 +1,18 @@
 boto3
 awscli
 
-pypdf 
+pypdf
 
-langchain 
+langchain
 langchain_community
+langchain-ollama
 
-streamlit 
+streamlit
+
+loguru
+watchdog
 
 faiss-cpu
+
+uvicorn
+fastapi

@@ -1,123 +1,66 @@
-import boto3
 import streamlit as st
-
-# Import Titan Embeddings Model to generate embeddings
-from langchain_community.embeddings import BedrockEmbeddings
-from langchain_community.llms.bedrock import Bedrock
-
-# Data Ingestion
-import numpy as np
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import PyPDFDirectoryLoader
-
-# Vector Embedding and Vector Store
-from langchain_community.vectorstores import FAISS
-
-# LLM Models
-from langchain.prompts import PromptTemplate
-from langchain.chains import RetrievalQA
-
-# Initialize Bedrock Client
-bedrock = boto3.client(service_name="bedrock-runtime")
-
-bedrock_embeddings = BedrockEmbeddings(
-    model_id="amazon.titan-embed-text-v1", client=bedrock
-)
+import requests
+import re
 
 
-# Function for data ingestion from PDF files
-def data_ingestion():
+# Helper function to format the response
+def format_response(response_text):
     """
-    Load PDF documents from the 'pdfs' directory and split them into smaller chunks.
-
-    Returns:
-        list: A list of documents split into smaller chunks.
+    Formats the response text, styling content inside <think> tags with smaller, lighter text,
+    while keeping the rest of the text normal and maintaining line breaks.
     """
-    loader = PyPDFDirectoryLoader("pdfs")
-    documents = loader.load()
+    # Using regex to capture everything inside <think>...</think>
+    think_match = re.search(r"<think>(.*?)<\/think>", response_text, re.DOTALL)
+    if think_match:
+        # Extract <think> content and clean up
+        think_content = think_match.group(1).strip()
 
-    # Using Character splitter for better results with this PDF data set
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)
-    docs = text_splitter.split_documents(documents)
-    return docs
+        # Replace newlines in <think> content with <br> for proper HTML rendering
+        think_content = think_content.replace("\n", "<br>")
 
+        # Remove <think>...</think> from response text to get normal content
+        normal_content = re.sub(
+            r"<think>.*?</think>", "", response_text, flags=re.DOTALL
+        ).strip()
 
-# Function to create and save the vector store
-def get_vector_store(docs):
-    """
-    Create a FAISS vector store from the given documents and save it locally.
+    else:
+        # Default case if no <think> content is found
+        think_content = ""
+        normal_content = response_text.strip()
 
-    Args:
-        docs (list): A list of documents to be embedded and stored in the vector store.
-    """
-    vectorstore_faiss = FAISS.from_documents(docs, bedrock_embeddings)
-    vectorstore_faiss.save_local("faiss_index")
-
-
-# Function to create the Titan LLM
-def get_titan_llm():
-    """
-    Initialize and return the Titan LLM model.
-
-    Returns:
-        Bedrock: The initialized Titan LLM model.
-    """
-    llm = Bedrock(
-        model_id="amazon.titan-text-express-v1",
-        client=bedrock,
-        model_kwargs={"maxTokenCount": 512},
-    )
-    return llm
-
-
-# Function to get response from the LLM
-def get_response_llm(llm, vectorstore_faiss, query):
-    """
-    Generate a response from the LLM based on the provided query and vector store.
-
-    Args:
-        llm (Bedrock): The language model to generate the response.
-        vectorstore_faiss (FAISS): The FAISS vector store for document retrieval.
-        query (str): The user's question or query.
-
-    Returns:
-        str: The generated response from the LLM.
-    """
-
-    # Prompt template for the LLM
-    prompt_template = """
-    Human: Use the following pieces of context to provide a concise answer to the question at the end. Please summarize with at least 250 words with detailed explanations. If you don't know the answer, just say that you don't know, don't try to make up an answer.
-    <context>
-    {context}
-    </context>
-
-    Question: {question}
-
-    Assistant:
-    """
-
-    PROMPT = PromptTemplate(
-        template=prompt_template, input_variables=["context", "question"]
+    # Format the content
+    formatted_think = (
+        (
+            f"<p style='font-size: 0.75em; font-style: italic; color: rgba(255, 255, 255, 0.75); line-height: 1.5;'>{think_content}</p>"
+        )
+        if think_content
+        else ""
     )
 
-    qa = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=vectorstore_faiss.as_retriever(
-            search_type="similarity", search_kwargs={"k": 3}
-        ),
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": PROMPT},
-    )
-    answer = qa({"query": query})
-    return answer["result"]
+    formatted_normal = f"<p style='font-size: 1em; font-weight: normal; color: #ffffff;'>{normal_content}</p>"
+
+    return formatted_think + formatted_normal
+
+
+# Render additional details with the same formatting as <think>
+def format_additional_details(details):
+    """
+    Formats the additional details in a horizontal layout with inline-block styling.
+    """
+    formatted_details = ""
+    for key, value in details.items():
+        formatted_details += (
+            f"<div style='display: inline-block; margin-right: 2em; font-size: 0.75em; font-style: italic; color: rgba(255, 255, 255, 0.75);'>"
+            f"<strong>{key}:</strong> {value}</div>"
+        )
+    return formatted_details
 
 
 # Main function to run the Streamlit app
 def main():
     """
     Main function to run the Streamlit app, allowing users to ask questions about their PDF documents
-    and generate responses using the Titan LLM.
+    and generate responses using the Ollama-based API.
     """
     st.set_page_config(page_title="📄 AI PDF Assistant", layout="wide")
 
@@ -144,48 +87,51 @@ def main():
         help="Type in a question to get insights from the loaded PDF documents.",
     )
 
-    # Sidebar Management
-    st.sidebar.markdown(
-        """
-        <h2 style='color: #4A90E2;'>Manage Vector Store</h2>
-        <p style='color: #7F8C8D;'>
-        Update the vector representation of your documents to enhance the AI's comprehension.
-        </p>
-        """,
-        unsafe_allow_html=True,
-    )
-    if st.sidebar.button("🔄 Update Vectors"):
-        with st.spinner("Updating vectors... This may take a few moments."):
-            docs = data_ingestion()
-            get_vector_store(docs)
-            st.sidebar.success("✅ Vectors updated successfully!")
-
-    # Model Selection
-    st.sidebar.markdown(
-        """
-        <h2 style='color: #4A90E2;'>Select AI Model</h2>
-        <p style='color: #7F8C8D;'>
-        Choose an AI model to generate responses from your documents.
-        </p>
-        """,
-        unsafe_allow_html=True,
-    )
-    model_choice = st.sidebar.radio("Choose a model:", ("Titan",))
-
     # Get Response Section
     if st.button("🤖 Get Response"):
         if user_question.strip():
-            with st.spinner(f"Generating response using the {model_choice} model..."):
-                faiss_index = FAISS.load_local(
-                    "faiss_index",
-                    bedrock_embeddings,
-                    allow_dangerous_deserialization=True,
-                )
-                llm = get_titan_llm()
-                response = get_response_llm(llm, faiss_index, user_question)
-                st.markdown(f"### 🤖 {model_choice}'s Response")
-                st.markdown(response, unsafe_allow_html=True)
-                st.success("Response generated successfully!")
+            with st.spinner("Generating response from the API..."):
+                # Send request to the FastAPI server
+                api_url = "http://localhost:8000/query"
+                payload = {"question": user_question}
+
+                try:
+                    response = requests.post(api_url, json=payload)
+                    if response.status_code == 200:
+                        api_response = response.json()
+
+                        # Format the response
+                        formatted_response = format_response(
+                            api_response.get("response", "No response received.")
+                        )
+
+                        st.markdown("### 🤖 AI's Response")
+                        st.markdown(formatted_response, unsafe_allow_html=True)
+
+                        # Display additional details
+                        st.markdown("###### 📜 Additional Details:")
+                        details = {
+                            "Model Name": api_response.get("model_name", "N/A"),
+                            "Embeddings Name": api_response.get(
+                                "embeddings_name", "N/A"
+                            ),
+                            "Query Time (seconds)": api_response.get(
+                                "query_time_seconds", "N/A"
+                            ),
+                            "Request UUID": api_response.get("request_uuid", "N/A"),
+                            "Timestamp": api_response.get("timestamp", "N/A"),
+                        }
+
+                        formatted_details = format_additional_details(details)
+                        st.markdown(formatted_details, unsafe_allow_html=True)
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        st.success("Response generated successfully!")
+
+                    else:
+                        st.error(f"Error: {response.status_code} - {response.text}")
+
+                except requests.exceptions.RequestException as e:
+                    st.error(f"API request failed: {str(e)}")
         else:
             st.warning("⚠️ Please enter a valid question before generating a response.")
 
