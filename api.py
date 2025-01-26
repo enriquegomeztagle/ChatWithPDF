@@ -12,7 +12,8 @@ import os
 
 from datetime import datetime
 import time
-from loguru import logger  # Changed import
+from loguru import logger
+import sys
 
 app = FastAPI()
 
@@ -61,9 +62,7 @@ async def query(request: Request):
     date_field = current_datetime.strftime("%Y-%m-%d")  # Format YYYY-MM-DD
     time_field = current_datetime.strftime("%H:%M:%S")  # Format HH:MM:SS
 
-    logger.info(
-        "Time to query: %s seconds", end_time_query - start_time_query
-    )  # Using loguru logger
+    logger.info(f"Time to query: {query_time_seconds} seconds")
 
     return {
         "response": response_data["result"],
@@ -91,6 +90,14 @@ def data_ingestion(pdf_directory="pdfs"):
 def initialize_qa_system():
     # Load environment variables
     load_dotenv()
+    logger.remove()
+    logger.add(sys.stdout, level="INFO")
+    logger.add(
+        "app.log",
+        rotation="500 MB",
+        level="DEBUG",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {module}:{function}:{line} - {message}",
+    )
 
     model_name = os.getenv("MODEL_NAME")
     embeddings_name = os.getenv("EMBEDDINGS_NAME")
