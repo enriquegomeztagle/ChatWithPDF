@@ -10,6 +10,7 @@ langchain-ollama
 streamlit
 
 loguru
+watchdog
 
 faiss-cpu
 
