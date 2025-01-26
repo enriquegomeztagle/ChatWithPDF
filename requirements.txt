@@ -5,7 +5,11 @@ pypdf
 
 langchain 
 langchain_community
+langchain-ollama
 
 streamlit 
 
 faiss-cpu
+
+uvicorn
+fastapi
